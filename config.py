@@ -1,6 +1,11 @@
-TOKEN = "e0830c5a65fc8dd66b85266d0cde126505de0b03"  
+import os
+from dotenv import load_dotenv
 
-API_BASE_URL = "https://api.moysklad.ru/api/remap/1.2"  
+load_dotenv()
+
+TOKEN = os.getenv("TOKEN_MS")
+
+API_BASE_URL = "https://api.moysklad.ru/api/remap/1.2"
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",

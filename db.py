@@ -1,8 +1,10 @@
 import os
-from dotenv import load_dotenvimport psycopg2
+from dotenv import load_dotenv
+import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from notifier import send_telegram_message
+
 
 load_dotenv()
 
