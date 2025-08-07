@@ -1,6 +1,11 @@
 import requests
+import os
+from dotenv import load_dotenv
 
-TELEGRAM_TOKEN = '7452603557:AAGwShcLxny5QltAdw0yaGxwj5lEAQZQvWI'
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TG_TOKEN")
+
 CHAT_ID = '1823753963'
 
 def send_telegram_message(text):
