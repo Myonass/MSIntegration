@@ -5,17 +5,22 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from notifier import send_telegram_message
 
-
 load_dotenv()
 
 def get_connection():
     return psycopg2.connect(
-	dbname=os.getenv("DB_NAME"),
+        dbname=os.getenv("DB_NAME"),
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         host=os.getenv("DB_HOST"),
         port=os.getenv("DB_PORT")
     )
+
+# Универсальная функция для преобразования строки
+def get_string(val):
+    if isinstance(val, dict):
+        return val.get("name") or str(val)
+    return val
 
 def upsert_customer_order(order):
     conn = get_connection()
@@ -43,6 +48,7 @@ def upsert_customer_order(order):
             conn.close()
             return
 
+        # Обновление заказа
         cur.execute("""
             UPDATE customer_orders
             SET order_name = %s,
@@ -50,7 +56,9 @@ def upsert_customer_order(order):
                 state = %s,
                 sum_total = %s,
                 currency = %s,
-                updated_at = %s
+                updated_at = %s,
+                deal_status = %s,
+                deal_status_date = %s
             WHERE id = %s
         """, (
             order_name,
@@ -59,17 +67,24 @@ def upsert_customer_order(order):
             order.get("sum_total"),
             order.get("currency"),
             updated_at,
+            order.get("deal_status"),
+            order.get("deal_status_date"),
             order_id
         ))
 
+        # Очистка старых позиций
         cur.execute("DELETE FROM order_positions WHERE order_id = %s", (order_id,))
         send_telegram_message(f"♻ Обновлён заказ: {order_name}")
         print(f"♻ Обновлён заказ: {order_name}")
 
     else:
+        # Вставка нового заказа
         cur.execute("""
-            INSERT INTO customer_orders (ms_id, order_name, bitrix_deal_id, state, sum_total, currency, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO customer_orders (
+                ms_id, order_name, bitrix_deal_id, state, sum_total,
+                currency, updated_at, deal_status, deal_status_date
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             ms_id,
@@ -78,22 +93,46 @@ def upsert_customer_order(order):
             order.get("state"),
             order.get("sum_total"),
             order.get("currency"),
-            updated_at
+            updated_at,
+            order.get("deal_status"),
+            order.get("deal_status_date")
         ))
         order_id = cur.fetchone()[0]
         send_telegram_message(f"✅ Добавлен новый заказ: {order_name}")
         print(f"✅ Добавлен новый заказ: {order_name}")
 
+    # Добавление позиций заказа
     for pos in order.get("positions", []):
         cur.execute("""
-            INSERT INTO order_positions (order_id, name, quantity, unit_price, total_price)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO order_positions (
+                order_id,
+                position_id,
+                product_name,
+                quantity,
+                price,
+                total,
+                supplier_name,
+                supplier_terms,
+                supplier_payment_status,
+                purchase_price,
+                weight,
+                lot_number,
+                brand
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s);
         """, (
             order_id,
+            pos.get("position_id"),
             pos.get("name"),
             pos.get("quantity"),
             pos.get("unit_price"),
-            pos.get("total_price")
+            pos.get("total_price"),
+            pos.get("supplier"),
+            get_string(pos.get("supplier_terms")),
+            pos.get("purchase_price"),
+            pos.get("weight"),
+            pos.get("batch"),
+            get_string(pos.get("brand"))
         ))
 
     conn.commit()

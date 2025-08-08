@@ -1,3 +1,5 @@
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from allCustomerOrders import get_all_customer_orders_with_details
 from db import upsert_customer_order
 
