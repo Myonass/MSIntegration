@@ -1,6 +1,12 @@
 from db import get_connection
 from allCustomerOrders import get_all_customer_orders_with_details
 
+# Универсальная функция для безопасного получения строки
+def get_string(val):
+    if isinstance(val, dict):
+        return val.get("name") or str(val)
+    return val
+
 def save_orders_to_db():
     orders = get_all_customer_orders_with_details()
     conn = get_connection()
@@ -10,32 +16,13 @@ def save_orders_to_db():
         ms_id = order["ms_id"]
         updated_at = order["updated_at"]
 
-        # Проверяем, есть ли заказ и его время обновления
+        # Проверяем, есть ли уже заказ
         cur.execute("SELECT id, updated_at FROM customer_orders WHERE ms_id = %s", (ms_id,))
         result = cur.fetchone()
 
         if result:
-            order_id_db, updated_at_db = result
-
-            if updated_at == updated_at_db:
-                # Проверяем поля вручную
-                cur.execute("""
-                    SELECT order_name, bitrix_deal_id, state, sum_total, currency
-                    FROM customer_orders
-                    WHERE id = %s
-                """, (order_id_db,))
-                row = cur.fetchone()
-                if row == (
-                    order["order_name"],
-                    order["bitrix_deal_id"],
-                    order["state"],
-                    order["sum_total"],
-                    order["currency"]
-                ):
-                    print(f"⏭ Заказ {order['order_name']} не изменился. Пропускаем.")
-                    continue  # Данные полностью совпадают
-
-            # Иначе — обновляем заказ и перезаписываем позиции
+            order_id_db, _ = result
+            # Обновляем заказ
             cur.execute("""
                 UPDATE customer_orders
                 SET order_name = %s,
@@ -43,7 +30,9 @@ def save_orders_to_db():
                     state = %s,
                     sum_total = %s,
                     currency = %s,
-                    updated_at = %s
+                    updated_at = %s,
+                    deal_status = %s,
+                    deal_status_date = %s
                 WHERE id = %s
             """, (
                 order["order_name"],
@@ -52,30 +41,21 @@ def save_orders_to_db():
                 order["sum_total"],
                 order["currency"],
                 updated_at,
+                order["deal_status"],
+                order["deal_status_date"],
                 order_id_db
             ))
 
+            # Удаляем старые позиции
             cur.execute("DELETE FROM order_positions WHERE order_id = %s", (order_id_db,))
-
-            for pos in order["positions"]:
-                cur.execute("""
-                    INSERT INTO order_positions (order_id, name, quantity, unit_price, total_price)
-                    VALUES (%s, %s, %s, %s, %s);
-                """, (
-                    order_id_db,
-                    pos["name"],
-                    pos["quantity"],
-                    pos["unit_price"],
-                    pos["total_price"]
-                ))
-
-            print(f"♻️ Заказ {order['order_name']} обновлён.")
-
         else:
             # Вставляем новый заказ
             cur.execute("""
-                INSERT INTO customer_orders (ms_id, order_name, bitrix_deal_id, state, sum_total, currency, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO customer_orders (
+                    ms_id, order_name, bitrix_deal_id, state, sum_total, currency,
+                    updated_at, deal_status, deal_status_date
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             """, (
                 ms_id,
@@ -84,28 +64,52 @@ def save_orders_to_db():
                 order["state"],
                 order["sum_total"],
                 order["currency"],
-                updated_at
+                updated_at,
+                order["deal_status"],
+                order["deal_status_date"]
             ))
-            order_id = cur.fetchone()[0]
+            order_id_db = cur.fetchone()[0]
 
-            for pos in order["positions"]:
-                cur.execute("""
-                    INSERT INTO order_positions (order_id, name, quantity, unit_price, total_price)
-                    VALUES (%s, %s, %s, %s, %s);
-                """, (
+        # Добавляем позиции заказа
+        for pos in order["positions"]:
+            cur.execute("""
+                INSERT INTO order_positions (
                     order_id,
-                    pos["name"],
-                    pos["quantity"],
-                    pos["unit_price"],
-                    pos["total_price"]
-                ))
+                    position_id,
+                    product_name,
+                    quantity,
+                    price,
+                    total,
+                    supplier_name,
+                    supplier_terms,
+                    supplier_payment_status,
+                    purchase_price,
+                    weight,
+                    lot_number,
+                    brand
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s);
+            """, (
+                order_id_db,
+                pos.get("position_id"),
+                pos.get("name"),
+                pos.get("quantity"),
+                pos.get("unit_price"),
+                pos.get("total_price"),
+                pos.get("supplier"),
+                get_string(pos.get("supplier_terms")),
+                pos.get("purchase_price"),
+                pos.get("weight"),
+                pos.get("batch"),
+                get_string(pos.get("brand"))
+            ))
 
-            print(f"✅ Новый заказ {order['order_name']} добавлен.")
+        print(f"✅ Заказ обработан: {order['order_name']}")
 
     conn.commit()
     cur.close()
     conn.close()
-    print("������ Синхронизация завершена.")
+    print("🎯 Синхронизация завершена.")
 
 if __name__ == "__main__":
     save_orders_to_db()
