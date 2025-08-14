@@ -1,3 +1,4 @@
+# saveOrdersToDb.py (обновленный)
 from db import get_connection
 from allCustomerOrders import get_all_customer_orders_with_details
 
@@ -82,13 +83,14 @@ def save_orders_to_db():
                     total,
                     supplier_name,
                     supplier_terms,
-                    supplier_payment_status,
+                    supplier_payment_due,
                     purchase_price,
                     weight,
                     lot_number,
-                    brand
+                    brand,
+                    unit
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s);
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
             """, (
                 order_id_db,
                 pos.get("position_id"),
@@ -96,12 +98,14 @@ def save_orders_to_db():
                 pos.get("quantity"),
                 pos.get("unit_price"),
                 pos.get("total_price"),
-                pos.get("supplier"),
+                get_string(pos.get("supplier")),
                 get_string(pos.get("supplier_terms")),
+                pos.get("supplier_payment_due"),
                 pos.get("purchase_price"),
                 pos.get("weight"),
                 pos.get("batch"),
-                get_string(pos.get("brand"))
+                get_string(pos.get("brand")),
+                pos.get("unit")
             ))
 
         print(f"✅ Заказ обработан: {order['order_name']}")
@@ -109,7 +113,7 @@ def save_orders_to_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("🎯 Синхронизация завершена.")
+    print("������ Синхронизация завершена.")
 
 if __name__ == "__main__":
     save_orders_to_db()

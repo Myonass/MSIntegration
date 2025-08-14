@@ -1,11 +1,14 @@
+# allCustomerOrders.py (обновленный)
 import requests
 import time
 from config import API_BASE_URL, HEADERS
 from currencyCodeConverter import get_currency_code
+from datetime import datetime, timedelta
+import re
 
-def fetch_detailed_product_info(product_meta_href):
+def fetch_detailed_product_info(product_meta_href, order_moment=None):
     try:
-        url = f"{product_meta_href}?expand=attributes.value"
+        url = f"{product_meta_href}?expand=attributes.value,uom,supplier"
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         data = response.json()
@@ -13,6 +16,7 @@ def fetch_detailed_product_info(product_meta_href):
         attributes = data.get("attributes", [])
         brand = None
         supplier_terms = None
+        supplier_payment_due = None
 
         for attr in attributes:
             if attr.get("name") == "Бренд":
@@ -20,13 +24,28 @@ def fetch_detailed_product_info(product_meta_href):
             elif attr.get("name") == "Условия Платежа":
                 supplier_terms = attr.get("value")
 
+        if order_moment and supplier_terms:
+            try:
+                # Parse days from supplier_terms
+                match = re.search(r'(\d+)\s*дн', str(supplier_terms).lower())
+                if match:
+                    days = int(match.group(1))
+                    dt = datetime.fromisoformat(order_moment.replace(' ', 'T') if ' ' in order_moment else order_moment)
+                    due = dt + timedelta(days=days)
+                    supplier_payment_due = due.isoformat()
+            except Exception as e:
+                print(f"Ошибка расчета даты оплаты: {e}")
+
         return {
             "product_name": data.get("name", "Неизвестно"),
             "brand": brand,
             "supplier_terms": supplier_terms,
             "purchase_price": data.get("buyPrice", {}).get("value", 0) / 100 if data.get("buyPrice") else None,
             "weight": data.get("weight"),
-            "batch": data.get("article", None)
+            "batch": data.get("article", None),
+            "unit": data.get("uom", {}).get("name"),
+            "supplier": data.get("supplier", {}).get("name"),
+            "supplier_payment_due": supplier_payment_due
         }
 
     except requests.RequestException as e:
@@ -37,7 +56,10 @@ def fetch_detailed_product_info(product_meta_href):
             "supplier_terms": None,
             "purchase_price": None,
             "weight": None,
-            "batch": None
+            "batch": None,
+            "unit": None,
+            "supplier": None,
+            "supplier_payment_due": None
         }
 
 def get_all_customer_orders_with_details():
@@ -62,6 +84,7 @@ def get_all_customer_orders_with_details():
             currency_href = order.get("rate", {}).get("currency", {}).get("meta", {}).get("href")
             currency = get_currency_code(currency_href) if currency_href else "UNKNOWN"
             updated = order.get("updated")
+            moment = order.get("moment")
 
             deal_id = None
             status = "Без статуса"
@@ -96,7 +119,7 @@ def get_all_customer_orders_with_details():
                     if isinstance(assort, dict):
                         href = assort.get("meta", {}).get("href")
                         if href:
-                            product_info = fetch_detailed_product_info(href)
+                            product_info = fetch_detailed_product_info(href, order_moment=moment)
 
                     positions_info.append({
                         "position_id": pos.get("id"),
@@ -104,12 +127,14 @@ def get_all_customer_orders_with_details():
                         "quantity": quantity,
                         "unit_price": unit_price,
                         "total_price": total_price,
-                        "supplier": None,
+                        "supplier": product_info.get("supplier"),
                         "supplier_terms": product_info.get("supplier_terms"),
                         "purchase_price": product_info.get("purchase_price"),
                         "weight": product_info.get("weight"),
                         "batch": product_info.get("batch"),
-                        "brand": product_info.get("brand")
+                        "brand": product_info.get("brand"),
+                        "unit": product_info.get("unit"),
+                        "supplier_payment_due": product_info.get("supplier_payment_due")
                     })
 
             all_orders.append({
