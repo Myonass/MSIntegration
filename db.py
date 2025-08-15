@@ -1,8 +1,6 @@
-# db.py (обновленный)
 import os
 from dotenv import load_dotenv
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from notifier import send_telegram_message
 
@@ -17,7 +15,6 @@ def get_connection():
         port=os.getenv("DB_PORT")
     )
 
-# Универсальная функция для преобразования строки
 def get_string(val):
     if isinstance(val, dict):
         return val.get("name") or str(val)
@@ -49,7 +46,6 @@ def upsert_customer_order(order):
             conn.close()
             return
 
-        # Обновление заказа
         cur.execute("""
             UPDATE customer_orders
             SET order_name = %s,
@@ -73,13 +69,9 @@ def upsert_customer_order(order):
             order_id
         ))
 
-        # Очистка старых позиций
         cur.execute("DELETE FROM order_positions WHERE order_id = %s", (order_id,))
         send_telegram_message(f"♻ Обновлён заказ: {order_name}")
-        print(f"♻ Обновлён заказ: {order_name}")
-
     else:
-        # Вставка нового заказа
         cur.execute("""
             INSERT INTO customer_orders (
                 ms_id, order_name, bitrix_deal_id, state, sum_total,
@@ -100,26 +92,13 @@ def upsert_customer_order(order):
         ))
         order_id = cur.fetchone()[0]
         send_telegram_message(f"✅ Добавлен новый заказ: {order_name}")
-        print(f"✅ Добавлен новый заказ: {order_name}")
 
-    # Добавление позиций заказа
     for pos in order.get("positions", []):
         cur.execute("""
             INSERT INTO order_positions (
-                order_id,
-                position_id,
-                product_name,
-                quantity,
-                price,
-                total,
-                supplier_name,
-                supplier_terms,
-                supplier_payment_due,
-                purchase_price,
-                weight,
-                lot_number,
-                brand,
-                unit
+                order_id, position_id, product_name, quantity, price, total,
+                supplier_name, supplier_terms, supplier_payment_due, purchase_price,
+                weight, lot_number, brand, unit
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
@@ -137,6 +116,73 @@ def upsert_customer_order(order):
             pos.get("batch"),
             get_string(pos.get("brand")),
             pos.get("unit")
+        ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def upsert_purchase_order(order):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    ms_id = order.get("ms_id")
+    order_name = order.get("name", "Без названия")
+
+    try:
+        updated_at = datetime.fromisoformat(order["updated"]).replace(microsecond=0)
+    except Exception as e:
+        print(f"⚠ Ошибка формата updated у {order_name}: {e}")
+        updated_at = datetime.now().replace(microsecond=0)
+
+    cur.execute("SELECT id, updated FROM purchase_orders WHERE ms_id = %s", (ms_id,))
+    result = cur.fetchone()
+
+    if result:
+        order_id, existing_updated_at = result
+        existing_updated_at = existing_updated_at.replace(microsecond=0)
+
+        if updated_at <= existing_updated_at:
+            print(f"⏭ Заказ поставщика {order_name} не изменился. Пропущен.")
+            cur.close()
+            conn.close()
+            return
+
+        cur.execute("""
+            UPDATE purchase_orders
+            SET payment_balance = %s,
+                supplier_name = %s,
+                supplier_payment_status = %s,
+                supplier_payment_fact_date = %s,
+                supplier_first_payment_sum = %s,
+                updated = %s
+            WHERE id = %s
+        """, (
+            order.get("payment_balance"),
+            order.get("supplier_name"),
+            order.get("supplier_payment_status"),
+            order.get("supplier_payment_fact_date"),
+            order.get("supplier_first_payment_sum"),
+            updated_at,
+            order_id
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO purchase_orders (
+                ms_id, name, created, updated, payment_balance, supplier_name,
+                supplier_payment_status, supplier_payment_fact_date, supplier_first_payment_sum
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            ms_id,
+            order_name,
+            order.get("created"),
+            updated_at,
+            order.get("payment_balance"),
+            order.get("supplier_name"),
+            order.get("supplier_payment_status"),
+            order.get("supplier_payment_fact_date"),
+            order.get("supplier_first_payment_sum")
         ))
 
     conn.commit()
