@@ -129,62 +129,41 @@ def upsert_purchase_order(order):
     ms_id = order.get("ms_id")
     order_name = order.get("name", "Без названия")
 
+    # Обработка updated
     try:
         updated_at = datetime.fromisoformat(order["updated"]).replace(microsecond=0)
     except Exception as e:
         print(f"⚠ Ошибка формата updated у {order_name}: {e}")
         updated_at = datetime.now().replace(microsecond=0)
 
-    cur.execute("SELECT id, updated FROM purchase_orders WHERE ms_id = %s", (ms_id,))
-    result = cur.fetchone()
+    # UPSERT через ON CONFLICT(ms_id)
+    cur.execute("""
+        INSERT INTO purchase_orders (
+            ms_id, name, created, updated, payment_balance, supplier_name,
+            supplier_payment_status, supplier_payment_fact_date, supplier_first_payment_sum
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (ms_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            created = EXCLUDED.created,
+            updated = EXCLUDED.updated,
+            payment_balance = EXCLUDED.payment_balance,
+            supplier_name = EXCLUDED.supplier_name,
+            supplier_payment_status = EXCLUDED.supplier_payment_status,
+            supplier_payment_fact_date = EXCLUDED.supplier_payment_fact_date,
+            supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum
+    """, (
+        ms_id,
+        order_name,
+        order.get("created"),
+        updated_at,
+        order.get("payment_balance"),
+        order.get("supplier_name"),
+        order.get("supplier_payment_status"),
+        order.get("supplier_payment_fact_date"),
+        order.get("supplier_first_payment_sum")
+    ))
 
-    if result:
-        order_id, existing_updated_at = result
-        existing_updated_at = existing_updated_at.replace(microsecond=0)
-
-        if updated_at <= existing_updated_at:
-            print(f"⏭ Заказ поставщика {order_name} не изменился. Пропущен.")
-            cur.close()
-            conn.close()
-            return
-
-        cur.execute("""
-            UPDATE purchase_orders
-            SET payment_balance = %s,
-                supplier_name = %s,
-                supplier_payment_status = %s,
-                supplier_payment_fact_date = %s,
-                supplier_first_payment_sum = %s,
-                updated = %s
-            WHERE id = %s
-        """, (
-            order.get("payment_balance"),
-            order.get("supplier_name"),
-            order.get("supplier_payment_status"),
-            order.get("supplier_payment_fact_date"),
-            order.get("supplier_first_payment_sum"),
-            updated_at,
-            order_id
-        ))
-    else:
-        cur.execute("""
-            INSERT INTO purchase_orders (
-                ms_id, name, created, updated, payment_balance, supplier_name,
-                supplier_payment_status, supplier_payment_fact_date, supplier_first_payment_sum
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            ms_id,
-            order_name,
-            order.get("created"),
-            updated_at,
-            order.get("payment_balance"),
-            order.get("supplier_name"),
-            order.get("supplier_payment_status"),
-            order.get("supplier_payment_fact_date"),
-            order.get("supplier_first_payment_sum")
-        ))
-
+    send_telegram_message(f"✅ Заказ поставщика обработан: {order_name}")
     conn.commit()
     cur.close()
     conn.close()

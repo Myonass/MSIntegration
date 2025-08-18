@@ -81,50 +81,36 @@ def save_purchase_orders_to_db():
     cur = conn.cursor()
 
     for order in orders:
-        ms_id = order["ms_id"]
-        updated = order["updated"]
-
-        cur.execute("SELECT id, updated FROM purchase_orders WHERE ms_id = %s", (ms_id,))
-        result = cur.fetchone()
-
-        if result:
-            order_id_db, _ = result
-            cur.execute("""
-                UPDATE purchase_orders
-                SET payment_balance = %s,
-                    supplier_name = %s,
-                    supplier_payment_status = %s,
-                    supplier_payment_fact_date = %s,
-                    supplier_first_payment_sum = %s,
-                    updated = %s
-                WHERE id = %s
-            """, (
-                order["payment_balance"], order["supplier_name"], order["supplier_payment_status"],
-                order["supplier_payment_fact_date"], order["supplier_first_payment_sum"],
-                updated, order_id_db
-            ))
-        else:
-            cur.execute("""
-                INSERT INTO purchase_orders (
-                    ms_id, name, created, updated,
-                    payment_balance, supplier_name,
-                    supplier_payment_status, supplier_payment_fact_date,
-                    supplier_first_payment_sum
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                ms_id, order["name"], order["created"], updated,
-                order["payment_balance"], order["supplier_name"],
-                order["supplier_payment_status"], order["supplier_payment_fact_date"],
-                order["supplier_first_payment_sum"]
-            ))
+        cur.execute("""
+            INSERT INTO purchase_orders (
+                ms_id, name, created, updated,
+                payment_balance, supplier_name,
+                supplier_payment_status, supplier_payment_fact_date,
+                supplier_first_payment_sum
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ms_id) DO UPDATE
+            SET name = EXCLUDED.name,
+                created = EXCLUDED.created,
+                updated = EXCLUDED.updated,
+                payment_balance = EXCLUDED.payment_balance,
+                supplier_name = EXCLUDED.supplier_name,
+                supplier_payment_status = EXCLUDED.supplier_payment_status,
+                supplier_payment_fact_date = EXCLUDED.supplier_payment_fact_date,
+                supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum;
+        """, (
+            order["ms_id"], order["name"], order["created"], order["updated"],
+            order["payment_balance"], order["supplier_name"],
+            order["supplier_payment_status"], order["supplier_payment_fact_date"],
+            order["supplier_first_payment_sum"]
+        ))
 
         print(f"✅ Заказ поставщика обработан: {order['name']}")
 
     conn.commit()
     cur.close()
     conn.close()
-    print("������ Синхронизация заказов поставщиков завершена.")
+    print("������ Синхронизация заказов поставщиков завершена.")
 
 
 if __name__ == "__main__":
