@@ -118,10 +118,6 @@ def upsert_customer_order(order):
             pos.get("unit")
         ))
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
 def upsert_purchase_order(order):
     conn = get_connection()
     cur = conn.cursor()
@@ -129,19 +125,18 @@ def upsert_purchase_order(order):
     ms_id = order.get("ms_id")
     order_name = order.get("name", "Без названия")
 
-    # Обработка updated
     try:
         updated_at = datetime.fromisoformat(order["updated"]).replace(microsecond=0)
     except Exception as e:
         print(f"⚠ Ошибка формата updated у {order_name}: {e}")
         updated_at = datetime.now().replace(microsecond=0)
 
-    # UPSERT через ON CONFLICT(ms_id)
     cur.execute("""
         INSERT INTO purchase_orders (
             ms_id, name, created, updated, payment_balance, supplier_name,
-            supplier_payment_status, supplier_payment_fact_date, supplier_first_payment_sum
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            supplier_payment_status, supplier_payment_fact_date,
+            supplier_first_payment_sum, customer_order_name
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (ms_id) DO UPDATE SET
             name = EXCLUDED.name,
             created = EXCLUDED.created,
@@ -150,7 +145,8 @@ def upsert_purchase_order(order):
             supplier_name = EXCLUDED.supplier_name,
             supplier_payment_status = EXCLUDED.supplier_payment_status,
             supplier_payment_fact_date = EXCLUDED.supplier_payment_fact_date,
-            supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum
+            supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum,
+            customer_order_name = EXCLUDED.customer_order_name
     """, (
         ms_id,
         order_name,
@@ -160,7 +156,8 @@ def upsert_purchase_order(order):
         order.get("supplier_name"),
         order.get("supplier_payment_status"),
         order.get("supplier_payment_fact_date"),
-        order.get("supplier_first_payment_sum")
+        order.get("supplier_first_payment_sum"),
+        order.get("customer_order_name")
     ))
 
     send_telegram_message(f"✅ Заказ поставщика обработан: {order_name}")

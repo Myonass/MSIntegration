@@ -72,7 +72,7 @@ def save_orders_to_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("������ Синхронизация заказов клиентов завершена.")
+    print("Синхронизация заказов клиентов завершена.")
 
 
 def save_purchase_orders_to_db():
@@ -86,9 +86,9 @@ def save_purchase_orders_to_db():
                 ms_id, name, created, updated,
                 payment_balance, supplier_name,
                 supplier_payment_status, supplier_payment_fact_date,
-                supplier_first_payment_sum
+                supplier_first_payment_sum, customer_order_name
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (ms_id) DO UPDATE
             SET name = EXCLUDED.name,
                 created = EXCLUDED.created,
@@ -97,12 +97,13 @@ def save_purchase_orders_to_db():
                 supplier_name = EXCLUDED.supplier_name,
                 supplier_payment_status = EXCLUDED.supplier_payment_status,
                 supplier_payment_fact_date = EXCLUDED.supplier_payment_fact_date,
-                supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum;
+                supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum,
+                customer_order_name = EXCLUDED.customer_order_name;
         """, (
             order["ms_id"], order["name"], order["created"], order["updated"],
             order["payment_balance"], order["supplier_name"],
             order["supplier_payment_status"], order["supplier_payment_fact_date"],
-            order["supplier_first_payment_sum"]
+            order["supplier_first_payment_sum"], order["customer_order_name"]
         ))
 
         print(f"✅ Заказ поставщика обработан: {order['name']}")
@@ -110,7 +111,7 @@ def save_purchase_orders_to_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("������ Синхронизация заказов поставщиков завершена.")
+    print("✅ Синхронизация заказов поставщиков завершена.")
 
 
 if __name__ == "__main__":
