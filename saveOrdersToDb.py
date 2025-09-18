@@ -27,26 +27,30 @@ def save_orders_to_db():
                 UPDATE customer_orders
                 SET order_name = %s, bitrix_deal_id = %s, state = %s,
                     sum_total = %s, currency = %s, updated_at = %s,
-                    deal_status = %s, deal_status_date = %s
+                    deal_status = %s, deal_status_date = %s,
+                    customer_name = %s
                 WHERE id = %s
             """, (
                 order["order_name"], order["bitrix_deal_id"], order["state"],
                 order["sum_total"], order["currency"], updated_at,
-                order["deal_status"], order["deal_status_date"], order_id_db
+                order["deal_status"], order["deal_status_date"],
+                order.get("customer_name"),
+                order_id_db
             ))
             cur.execute("DELETE FROM order_positions WHERE order_id = %s", (order_id_db,))
         else:
             cur.execute("""
                 INSERT INTO customer_orders (
                     ms_id, order_name, bitrix_deal_id, state, sum_total, currency,
-                    updated_at, deal_status, deal_status_date
+                    updated_at, deal_status, deal_status_date, customer_name
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             """, (
                 ms_id, order["order_name"], order["bitrix_deal_id"], order["state"],
                 order["sum_total"], order["currency"], updated_at,
-                order["deal_status"], order["deal_status_date"]
+                order["deal_status"], order["deal_status_date"],
+                order.get("customer_name")
             ))
             order_id_db = cur.fetchone()[0]
 
@@ -94,7 +98,7 @@ def save_purchase_orders_to_db():
                 created = EXCLUDED.created,
                 updated = EXCLUDED.updated,
                 payment_balance = EXCLUDED.payment_balance,
-                supplier_name = EXCLUDED.supplier_name,
+                supplier_name = COALESCE(EXCLUDED.supplier_name, purchase_orders.supplier_name),
                 supplier_payment_status = EXCLUDED.supplier_payment_status,
                 supplier_payment_fact_date = EXCLUDED.supplier_payment_fact_date,
                 supplier_first_payment_sum = EXCLUDED.supplier_first_payment_sum,
@@ -112,8 +116,3 @@ def save_purchase_orders_to_db():
     cur.close()
     conn.close()
     print("✅ Синхронизация заказов поставщиков завершена.")
-
-
-if __name__ == "__main__":
-    save_orders_to_db()
-    save_purchase_orders_to_db()

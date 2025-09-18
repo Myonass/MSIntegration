@@ -1,4 +1,3 @@
-# allCustomerOrders.py (обновленный)
 import requests
 import time
 from config import API_BASE_URL, HEADERS
@@ -26,7 +25,6 @@ def fetch_detailed_product_info(product_meta_href, order_moment=None):
 
         if order_moment and supplier_terms:
             try:
-                # Parse days from supplier_terms
                 match = re.search(r'(\d+)\s*дн', str(supplier_terms).lower())
                 if match:
                     days = int(match.group(1))
@@ -61,6 +59,20 @@ def fetch_detailed_product_info(product_meta_href, order_moment=None):
             "supplier": None,
             "supplier_payment_due": None
         }
+
+def get_agent_name(agent_meta):
+    """Запрашиваем имя контрагента по meta.href"""
+    if not agent_meta:
+        return None
+    href = agent_meta.get("href")
+    if not href:
+        return None
+    try:
+        r = requests.get(href, headers=HEADERS)
+        r.raise_for_status()
+        return r.json().get("name")
+    except requests.RequestException:
+        return None
 
 def get_all_customer_orders_with_details():
     url = f"{API_BASE_URL}/entity/customerorder"
@@ -102,6 +114,10 @@ def get_all_customer_orders_with_details():
                     deal_status_date = attr.get("updated") or updated
 
             state = status or order.get("state", {}).get("name", "Без статуса")
+
+            customer_name = order.get("agent", {}).get("name")
+            if not customer_name:
+                customer_name = get_agent_name(order.get("agent", {}).get("meta"))
 
             positions_info = []
             pos_url = f"{API_BASE_URL}/entity/customerorder/{order_id}/positions"
@@ -147,6 +163,7 @@ def get_all_customer_orders_with_details():
                 "updated_at": updated,
                 "deal_status": deal_status,
                 "deal_status_date": deal_status_date,
+                "customer_name": customer_name,
                 "positions": positions_info
             })
 
